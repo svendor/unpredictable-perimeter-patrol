@@ -1,2 +1,8 @@
 # Ignore python3 virtual environment
 venv/
+
+# Ignore pycache
+__pycache__/
+
+# Ignore random test files
+klad/
