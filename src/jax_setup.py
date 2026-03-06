@@ -8,6 +8,8 @@ from jax import lax, config
 import optax
 config.update("jax_debug_nans", True)
 
+import numpy as np
+
 # --- 1. DATA PREPARATION (Run once) ---
 def prepare_jax_data(template: list[list[tuple[int, int]]]):
     rows_list, cols_list, param_idx_list = [], [], []
@@ -84,12 +86,22 @@ def objective_fn(params, rows, cols, param_idx, n_states, num_histories):
     return -worst_case_min
 
 
-def optimize(template: list[list[tuple[int, int]]], n_states: int, num_histories: int, num_iterations: int = 400):
+def optimize(template: list[list[tuple[int, int]]], n_states: int, num_histories: int, num_iterations: int = 200):
     rows, cols, p_idx = prepare_jax_data(template)
 
     # A. Define Optimizer
-    learning_rate = 0.05
-    optimizer = optax.adam(learning_rate)
+    lr_schedule = optax.exponential_decay(
+        init_value=0.05,
+        transition_steps=50,
+        decay_rate=0.5
+    )
+
+    # 2. Chain the schedule with Gradient Clipping
+    # Clipping prevents "exploding" updates if a gradient spike occurs
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(learning_rate=lr_schedule)
+    )
 
     # B. Initialize Parameters and Optimizer State
     params = jnp.zeros(n_states * 2)
@@ -122,14 +134,26 @@ def print_human_readable(transition_matrix, strategy: Strategy):
 
     # We know that, by symmetry, we only need to consider location 0 and all their histories.
     # In other words, only the rows indexed by 0, 1, ..., num_histories-1 are relevant.
+    moves = np.zeros((num_histories, 3), dtype=float)
+
     for i, j, parameter in zip(rows, cols, params):
         if i < num_histories:
-            print(strategy.get_history_string(i) + f" -> {j // num_histories} with probability {parameter:.4f}")
+            next_loc = j // num_histories
+            # next_loc is n-1, 0 or 1, if the moves were Left Same or Right. By adding 1 and performing modulo
+            # we obtain 0, 1, 2.
+            move_index = (next_loc + 1) % n
+            moves[i, move_index] = parameter
+
+    for i in range(num_histories):
+        print(f"{strategy.get_history_string(i)}: {moves[i]}")
 
 # --- 3. OPTAX OPTIMIZATION LOOP ---
 if __name__ == "__main__":
-    n = 4
-    m = 2
+    from cli import parse_args
+
+    args = parse_args()
+    n = args.n
+    m = args.m
 
     strategy = LSRCycle(n, m)
     my_template = strategy.get_transition_template()
@@ -138,5 +162,5 @@ if __name__ == "__main__":
     print(f"Number of histories: {num_histories}")
     print(f"Number of states: {num_states}")
 
-    transition_matrix = optimize(my_template, num_states, num_histories)
+    transition_matrix = optimize(my_template, num_states, num_histories, num_iterations=400)
     print_human_readable(transition_matrix, strategy)
