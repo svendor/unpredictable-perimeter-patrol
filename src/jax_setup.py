@@ -38,6 +38,7 @@ def build_matrix(params, rows, cols, param_idx, n_states):
     norm_vals = raw_vals / (row_sums[rows] + 1e-12)
     return sparse.BCOO((norm_vals, jnp.stack([rows, cols], axis=1)), shape=(n_states, n_states))
 
+
 @jax.jit(static_argnames=('n_states', 'num_histories'))
 def objective_fn(params, rows, cols, param_idx, n_states, num_histories):
     # 1. Build the matrix
@@ -82,11 +83,12 @@ def objective_fn(params, rows, cols, param_idx, n_states, num_histories):
     # Find the worst-case history (the one with the minimum return probability)
     worst_case_min = jnp.min(all_lowest_mins)
 
-    # Return negative to maximize
+    # The optimizer will always minimize. If we want to maximize a value, we take the negative values.
     return -worst_case_min
 
 
-def optimize(template: list[list[tuple[int, int]]], n_states: int, num_histories: int, num_iterations: int = 200):
+def optimize(template: list[list[tuple[int, int]]], n_states: int, num_histories: int, num_iterations: int = 200,
+             decay_rate: float = 0.5):
     rows, cols, p_idx = prepare_jax_data(template)
 
     # A. Define Optimizer
@@ -120,7 +122,10 @@ def optimize(template: list[list[tuple[int, int]]], n_states: int, num_histories
         params, opt_state, loss = update_step(params, opt_state, rows, cols, p_idx, n_states, num_histories)
 
         if step % 20 == 0:
-            print(f"Iteration {step}: Min Probability = {loss:.6f}")
+            # If we are maximizing a probability, we must correct the output of our loss function.
+            # The loss function outputs negative values, as the optimizer will always minimize.
+            print(f"Iteration {step}: Max Probability = {-loss:.6f}")
+
 
     # E. Extract Final Result
     print("\nOptimization complete.")
@@ -131,6 +136,8 @@ def print_human_readable(transition_matrix, strategy: Strategy):
     rows, cols, params = transition_matrix.indices[:, 0], transition_matrix.indices[:, 1], transition_matrix.data
 
     print("\nOptimized Transition Probabilities from location 0:")
+    num_histories = strategy.get_num_histories()
+    n = strategy.get_num_vertices()
 
     # We know that, by symmetry, we only need to consider location 0 and all their histories.
     # In other words, only the rows indexed by 0, 1, ..., num_histories-1 are relevant.
@@ -161,6 +168,8 @@ if __name__ == "__main__":
     num_states = n*num_histories
     print(f"Number of histories: {num_histories}")
     print(f"Number of states: {num_states}")
+
+
 
     transition_matrix = optimize(my_template, num_states, num_histories, num_iterations=400)
     print_human_readable(transition_matrix, strategy)

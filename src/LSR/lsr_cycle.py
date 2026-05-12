@@ -1,8 +1,9 @@
 # from strategy import Strategy
 from LSR.lsr_history import LSRHistory
+from strategy import Strategy
 import numpy as np
 
-class LSRCycle():
+class LSRCycle(Strategy):
     """
     Contains a list of triples (cur, left, right) for each history,
     where the entries are probabilities of moving left, right or staying.
@@ -19,6 +20,16 @@ class LSRCycle():
         self.num_histories = LSRHistory.num_histories(m)
 
 
+    def get_num_states(self) -> int:
+        return self.n * self.num_histories
+
+    def get_num_histories(self) -> int:
+        return self.num_histories
+
+    def get_num_vertices(self) -> int:
+        return self.n
+
+
     def get_history_string(self, history_index: int) -> str:
         return f"{LSRHistory.from_index(history_index, self.m)}"
 
@@ -26,7 +37,7 @@ class LSRCycle():
     def get_transition_template(self) -> list[list[tuple[int, int]]]:
         output = []
 
-        for triples in self.__get_transitions_per_history():
+        for triples in LSRHistory.get_transitions_per_history(self.m):
             cur_list = []
             for history_index, next_history_index, move in triples:
                 vertices = np.arange(self.n)
@@ -45,58 +56,36 @@ class LSRCycle():
 
         return output
 
+    def print_human_readable(self, transition_matrix):
+        """Take the optimized parameters and print them in a human-readable format."""
+        rows, cols, params = transition_matrix.indices[:, 0], transition_matrix.indices[:, 1], transition_matrix.data
 
-    def __get_transitions_per_history(self) -> list[list[tuple[int, int, int]]]:
-        """
-        Returns a list of lists.
+        print("\nOptimized Transition Probabilities from location 0:")
+        num_histories = self.get_num_histories()
+        n = self.get_num_vertices()
 
-        An inner list contains equivalent transitions. That is, transitions that should occur with the same probability.
-        A transition is characterized by three integers: the current history index, the next history index and the move that causes the transition.
-        """
+        # We know that, by symmetry, we only need to consider location 0 and all their histories.
+        # In other words, only the rows indexed by 0, 1, ..., num_histories-1 are relevant.
+        moves = np.zeros((num_histories, 3), dtype=float)
 
-        output = []
+        for i, j, parameter in zip(rows, cols, params):
+            if i < num_histories:
+                next_loc = j // num_histories
+                # next_loc is n-1, 0 or 1, if the moves were Left Same or Right. By adding 1 and performing modulo
+                # we obtain 0, 1, 2.
+                move_index = (next_loc + 1) % n
+                moves[i, move_index] = parameter
 
-        seen_indices = np.zeros(self.num_histories, dtype=bool)
+        for i in range(num_histories):
+            print(f"{self.get_history_string(i)}: {moves[i]}")
 
-        for history_index in range(self.num_histories):
-            # We only need to consider one of the two flipped histories, since they have the same probabilities.
-            flipped_index = LSRHistory.flipped_index(history_index, self.m)
-
-            if seen_indices[flipped_index]:
-                continue
-
-            seen_indices[history_index] = True
-            seen_indices[flipped_index] = True
-
-            # Consider move SAME
-            cur_list = []
-            next_history_index = LSRHistory.next_index(history_index, LSRHistory.SAME, self.m)
-            cur_list.append((history_index, next_history_index, LSRHistory.SAME))
-            if flipped_index != history_index:
-                cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.SAME, self.m), LSRHistory.SAME))
-            output.append(cur_list)
-            # print(output[-1])
-
-            # Consider moves LEFT and RIGHT
-            cur_list = []
-            next_history_index = LSRHistory.next_index(history_index, LSRHistory.LEFT, self.m)
-            cur_list.append((history_index, next_history_index, LSRHistory.LEFT))
-            cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.RIGHT, self.m), LSRHistory.RIGHT))
-            output.append(cur_list)
-            # print(output[-1])
-
-            if flipped_index != history_index:
-                cur_list = []
-                next_history_index = LSRHistory.next_index(history_index, LSRHistory.RIGHT, self.m)
-                cur_list.append((history_index, next_history_index, LSRHistory.RIGHT))
-                cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.LEFT, self.m), LSRHistory.LEFT))
-                output.append(cur_list)
-                # print(output[-1])
-
-
-
-        return output
-
+    def print_transition_template(self, template: list[list[tuple[int, int]]]):
+        for cur_list in template:
+            print("New list:")
+            for start, end in cur_list:
+                sloc, shist = divmod(start, self.num_histories)
+                eloc, ehist = divmod(end, self.num_histories)
+                print(f"  {sloc}: {self.get_history_string(shist)} -> {eloc}: {self.get_history_string(ehist)}")
 
 
 if __name__ == "__main__":

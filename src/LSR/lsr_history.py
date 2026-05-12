@@ -54,15 +54,68 @@ class LSRHistory():
         return LSRHistory(self.m, new_history)
 
     def next_index(index: int, move: int, m: int) -> int:
+        if m == 1:
+            return 0
         return (index // 3) + move * 3**(m-2)
 
     def num_histories(m: int) -> int:
         return 3**(m-1)
 
 
-    def __to_letter(move: int):
+    def __to_letter(self, move: int):
         return "L" if move == LSRHistory.LEFT else "R" if move == LSRHistory.RIGHT else "S"
 
 
     def __repr__(self):
-        return "".join([LSRHistory.__to_letter(move) for move in self.history])
+        return "".join([self.__to_letter(move) for move in self.history])
+
+
+    def get_transitions_per_history(m: int) -> list[list[tuple[int, int, int]]]:
+        """
+        Returns a list of lists.
+
+        An inner list contains equivalent transitions. That is, transitions that should occur with the same probability.
+        A transition is characterized by three integers: the current history index, the next history index and the move that causes the transition.
+        """
+
+        output = []
+        num_histories = LSRHistory.num_histories(m)
+        seen_indices = np.zeros(num_histories, dtype=bool)
+
+        for history_index in range(num_histories):
+            # We only need to consider one of the two flipped histories, since they have the same probabilities.
+            flipped_index = LSRHistory.flipped_index(history_index, m)
+
+            if seen_indices[flipped_index]:
+                continue
+
+            seen_indices[history_index] = True
+            seen_indices[flipped_index] = True
+
+            # Consider move SAME
+            cur_list = []
+            next_history_index = LSRHistory.next_index(history_index, LSRHistory.SAME, m)
+            cur_list.append((history_index, next_history_index, LSRHistory.SAME))
+            if flipped_index != history_index:
+                cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.SAME, m), LSRHistory.SAME))
+            output.append(cur_list)
+            # print(output[-1])
+
+            # Consider moves LEFT and RIGHT
+            cur_list = []
+            next_history_index = LSRHistory.next_index(history_index, LSRHistory.LEFT, m)
+            cur_list.append((history_index, next_history_index, LSRHistory.LEFT))
+            cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.RIGHT, m), LSRHistory.RIGHT))
+            output.append(cur_list)
+            # print(output[-1])
+
+            if flipped_index != history_index:
+                cur_list = []
+                next_history_index = LSRHistory.next_index(history_index, LSRHistory.RIGHT, m)
+                cur_list.append((history_index, next_history_index, LSRHistory.RIGHT))
+                cur_list.append((flipped_index, LSRHistory.next_index(flipped_index, LSRHistory.LEFT, m), LSRHistory.LEFT))
+                output.append(cur_list)
+                # print(output[-1])
+
+
+        return output

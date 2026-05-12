@@ -6,3 +6,4 @@ __pycache__/
 
 # Ignore random test files
 klad/
+model.lp
